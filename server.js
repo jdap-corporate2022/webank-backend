@@ -1,16 +1,27 @@
 const express = require('express');
-const router = express.Router();
+const cors = require('cors');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
 
-// Inicialize com seu Access Token de Produção ou Teste do Mercado Pago
-const client = new MercadoPagoConfig({ 
-    accessToken: process.env.MP_ACCESS_TOKEN 
+const app = express();
+
+// Middlewares
+app.use(express.json());
+app.use(cors());
+
+// Configuração do Mercado Pago
+const client = new MercadoPagoConfig({
+    accessToken: process.env.MP_ACCESS_TOKEN || ''
 });
 
 const payment = new Payment(client);
 
+// Rota inicial de teste
+app.get('/', (req, res) => {
+    res.send('API WeBank + Mercado Pago conectada e ativa!');
+});
+
 // Rota para realizar o Envio Pix
-router.post('/api/pix/transferir', async (req, res) => {
+app.post('/api/pix/transferir', async (req, res) => {
     const { chavePix, tipoChave, valor, nomeDestinatario, emailPayer } = req.body;
 
     try {
@@ -25,7 +36,6 @@ router.post('/api/pix/transferir', async (req, res) => {
 
         const response = await payment.create({ body });
 
-        // Retorna o status e os dados do pagamento para o aplicativo Android
         return res.status(200).json({
             sucesso: true,
             idPagamento: response.id,
@@ -45,4 +55,8 @@ router.post('/api/pix/transferir', async (req, res) => {
     }
 });
 
-module.exports = router;
+// Inicia o servidor na porta configurada pelo Render
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor WeBank rodando na porta ${PORT}`);
+});
