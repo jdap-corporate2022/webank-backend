@@ -1,54 +1,48 @@
 const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const app = express();
+const router = express.Router();
+const { MercadoPagoConfig, Payment } = require('mercadopago');
 
-app.use(express.json());
-app.use(cors());
-
-// Token de Acesso do Mercado Pago (Carregado das variáveis de ambiente do Render)
-const MERCADO_PAGO_TOKEN = process.env.MERCADO_PAGO_TOKEN;
-
-// Rota de Teste
-app.get('/', (req, res) => {
-    res.send('API WeBank + Mercado Pago conectada e ativa!');
+// Inicialize com seu Access Token de Produção ou Teste do Mercado Pago
+const client = new MercadoPagoConfig({ 
+    accessToken: process.env.MP_ACCESS_TOKEN 
 });
 
-// Rota de Consulta Pix Real no DICT via Mercado Pago
-app.get('/api/pix/consultar/:chave', async (req, res) => {
-    const chave = req.params.chave;
+const payment = new Payment(client);
+
+// Rota para realizar o Envio Pix
+router.post('/api/pix/transferir', async (req, res) => {
+    const { chavePix, tipoChave, valor, nomeDestinatario, emailPayer } = req.body;
 
     try {
-        // Chamada à API de consulta de chaves/cobranças do Mercado Pago
-        const response = await axios.get(`https://api.mercadopago.com/v1/pix/keys/${encodeURIComponent(chave)}`, {
-            headers: {
-                'Authorization': `Bearer ${MERCADO_PAGO_TOKEN}`,
-                'Content-Type': 'application/json'
+        const body = {
+            transaction_amount: Number(valor),
+            description: `Transferência Pix WeBank para ${nomeDestinatario || chavePix}`,
+            payment_method_id: 'pix',
+            payer: {
+                email: emailPayer || 'usuario@webank.com.br'
             }
-        });
+        };
 
-        const dados = response.data;
+        const response = await payment.create({ body });
 
-        // Retorna as informações do titular para o aplicativo WeBank
-        res.json({
+        // Retorna o status e os dados do pagamento para o aplicativo Android
+        return res.status(200).json({
             sucesso: true,
-            chave: chave,
-            recebedor: {
-                nome: dados.owner?.name || "Nome não informado",
-                cpfMascarado: dados.owner?.identification?.number || "***.***.***-**",
-                instituicao: dados.bank?.name || "Mercado Pago IP"
-            }
+            idPagamento: response.id,
+            status: response.status,
+            statusDetail: response.status_detail,
+            qrCode: response.point_of_interaction?.transaction_data?.qr_code,
+            qrCodeBase64: response.point_of_interaction?.transaction_data?.qr_code_base64
         });
 
     } catch (error) {
-        console.error("Erro no Mercado Pago:", error.response ? error.response.data : error.message);
-        
-        res.status(404).json({
+        console.error('Erro na transferência Pix:', error);
+        return res.status(500).json({
             sucesso: false,
-            mensagem: "Chave Pix não encontrada ou inválida."
+            mensagem: 'Falha ao processar pagamento Pix via Mercado Pago',
+            erro: error.message
         });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+module.exports = router;
